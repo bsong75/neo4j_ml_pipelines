@@ -1,9 +1,10 @@
 
 ###  Neo4j Pipeline 
 Node Classification - Most direct for "classify entities as pest/no-pest"
-Link Prediction - What you're already trying
-Node Regression - If you want continuous probability scores
-GraphSAGE - Most advanced, if others don't work well
+Link Prediction - 
+Node Regression - continuous probability scores
+ML - traditional Machine Learning
+GraphSAGE - Most advanced
 
 
 ### Link Prediction explanation
