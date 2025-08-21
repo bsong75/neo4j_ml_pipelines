@@ -101,7 +101,6 @@ class NodeClassificationPestAnalyzer:
         for feature_name, algorithm in centrality_algorithms:
             try:
                 print(f"  Computing {feature_name}...")
-                
                 if feature_name == 'degree':
                     self.gds.run_cypher(f"""
                         CALL {algorithm}.mutate('{self.enhanced_graph_name}', {{
@@ -113,15 +112,12 @@ class NodeClassificationPestAnalyzer:
                 else:
                     self.gds.run_cypher(f"""
                         CALL {algorithm}.mutate('{self.enhanced_graph_name}', {{
-                            mutateProperty: '{feature_name}',
-                            maxIterations: 20
+                            mutateProperty: '{feature_name}'
                         }})
                         YIELD centralityDistribution  
                         RETURN centralityDistribution
                     """)
-                
                 print(f"    ✓ {feature_name} computed successfully")
-                
             except Exception as e:
                 print(f"    ✗ Failed to compute {feature_name}: {str(e)}")
         
@@ -145,22 +141,6 @@ class NodeClassificationPestAnalyzer:
         """)
         
         print(f"Created node classification pipeline: {self.pipeline_name}")
-        
-        # Add node property features (centrality measures)
-        node_features = ['degree', 'pageRank', 'betweenness', 'closeness', 'eigenvector']
-        
-        for feature in node_features:
-            try:
-                self.gds.run_cypher(f"""
-                    CALL gds.nodeClassification.addNodeProperty('{self.pipeline_name}', '{feature}', {{
-                        mutateProperty: '{feature}'
-                    }})
-                    YIELD name, nodePropertySteps, featureSteps, parameterSpace
-                    RETURN name
-                """)
-                print(f"  Added node feature: {feature}")
-            except Exception as e:
-                print(f"  Failed to add feature {feature}: {str(e)}")
         
         # Configure train/test split
         self.gds.run_cypher(f"""
@@ -323,61 +303,3 @@ class NodeClassificationPestAnalyzer:
         except:
             pass
 
-
-# Integration function for your main PestDataAnalyzer class
-def run_node_classification_pest_prediction(gds_instance, graph_name):
-    """
-    Convenience function to run node classification analysis
-    
-    Args:
-        gds_instance: Your GDS connection
-        graph_name: Your graph projection name
-        
-    Returns:
-        DataFrame with node classification predictions
-    """
-    
-    classifier = NodeClassificationPestAnalyzer(gds_instance, graph_name)
-    
-    try:
-        predictions = classifier.run_full_node_classification_analysis()
-        return predictions
-    finally:
-        # Always cleanup
-        classifier.cleanup_resources()
-
-
-# Example usage for integration with your PestDataAnalyzer
-def example_integration():
-    """
-    Example of how to integrate with your main PestDataAnalyzer class
-    """
-    
-    # Add this method to your PestDataAnalyzer class:
-    def run_node_classification_analysis(self):
-        """Run node classification pest prediction"""
-        from node_classification_pest import run_node_classification_pest_prediction
-        
-        predictions = run_node_classification_pest_prediction(
-            gds_instance=self.gds,
-            graph_name=self.graph.name()
-        )
-        
-        return predictions
-    
-    # Then use it like:
-    # analyzer = PestDataAnalyzer(...)
-    # analyzer.connect()
-    # analyzer.load_data()
-    # analyzer.create_nodes()
-    # analyzer.create_inspections_and_relationships()
-    # analyzer.create_projection()
-    # 
-    # # Run node classification
-    # predictions = analyzer.run_node_classification_analysis()
-    
-    print("Integration example - see comments for usage")
-
-
-if __name__ == "__main__":
-    example_integration()

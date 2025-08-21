@@ -1,10 +1,10 @@
 
-###  Neo4j Pipeline 
-Node Classification - Most direct for "classify entities as pest/no-pest"
-Link Prediction - 
-Node Regression - continuous probability scores
-ML - traditional Machine Learning
-GraphSAGE - Most advanced
+###  Neo4j Pipelines
+    - Node Classification - Most direct for "classify entities as pest/no-pest"
+    - Link Prediction - 
+    - Node Regression - continuous probability scores
+    - ML - traditional Machine Learning
+    - GraphSAGE - Most advanced
 
 
 ### Link Prediction explanation
