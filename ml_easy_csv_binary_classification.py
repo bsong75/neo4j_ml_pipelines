@@ -163,7 +163,144 @@ def evaluate_best_model(results, y_test):
     
     return best_model_name, best_result
 
-def plot_results(results, y_test):
+def evaluate_holdout_dataset(results, scaler, best_model_name, holdout_csv_path, output_csv_path=None):
+    """Evaluate the best model on holdout dataset and save predictions"""
+    
+    print(f"\n{'='*60}")
+    print("HOLDOUT DATASET EVALUATION")
+    print(f"{'='*60}")
+    
+    # Load holdout dataset
+    print(f"Loading holdout dataset from: {holdout_csv_path}")
+    holdout_df = pd.read_csv(holdout_csv_path)
+    
+    print(f"Holdout dataset shape: {holdout_df.shape}")
+    print(f"Holdout target distribution:\n{holdout_df['target_proxy'].value_counts()}")
+    
+    # Prepare features
+    feature_cols = [col for col in holdout_df.columns if col.startswith('embed_')]
+    X_holdout = holdout_df[feature_cols]
+    y_holdout = holdout_df['target_proxy']
+    
+    # Get the best model and its configuration
+    best_result = results[best_model_name]
+    best_model = best_result['model']
+    needs_scaling = best_result['needs_scaling']
+    
+    print(f"\nUsing best model: {best_model_name}")
+    print(f"Model needs scaling: {needs_scaling}")
+    
+    # Make predictions
+    print("Making predictions on holdout dataset...")
+    
+    if needs_scaling:
+        X_holdout_processed = scaler.transform(X_holdout)
+    else:
+        X_holdout_processed = X_holdout
+    
+    # Get predictions and probabilities
+    y_pred_holdout = best_model.predict(X_holdout_processed)
+    y_proba_holdout = best_model.predict_proba(X_holdout_processed)[:, 1]
+    
+    # Calculate holdout performance metrics
+    holdout_accuracy = accuracy_score(y_holdout, y_pred_holdout)
+    holdout_auc = roc_auc_score(y_holdout, y_proba_holdout)
+    
+    print(f"\n{'='*60}")
+    print("HOLDOUT PERFORMANCE RESULTS")
+    print(f"{'='*60}")
+    print(f"Holdout Accuracy: {holdout_accuracy:.4f}")
+    print(f"Holdout AUC: {holdout_auc:.4f}")
+    print(f"Training AUC: {best_result['auc']:.4f}")
+    print(f"Performance difference: {best_result['auc'] - holdout_auc:+.4f}")
+    
+    # Detailed classification report
+    print(f"\nDetailed Classification Report (Holdout):")
+    print(classification_report(y_holdout, y_pred_holdout))
+    
+    # Confusion Matrix
+    cm_holdout = confusion_matrix(y_holdout, y_pred_holdout)
+    print(f"\nConfusion Matrix (Holdout):")
+    print(f"                Predicted")
+    print(f"                No Pest  Pest")
+    print(f"Actual No Pest    {cm_holdout[0,0]:4d}   {cm_holdout[0,1]:4d}")
+    print(f"       Pest       {cm_holdout[1,0]:4d}   {cm_holdout[1,1]:4d}")
+    
+    # Create results dataframe
+    results_df = holdout_df.copy()
+    results_df['predicted_class'] = y_pred_holdout
+    results_df['predicted_probability'] = y_proba_holdout
+    
+    # Generate output filename if not provided
+    if output_csv_path is None:
+        output_csv_path = f"holdout_predictions_{best_model_name.lower().replace(' ', '_')}.csv"
+    
+    # Save to CSV
+    print(f"\nSaving results to: {output_csv_path}")
+    results_df.to_csv(output_csv_path, index=False)
+    
+    # Show sample of results
+    print(f"\nSample of saved results:")
+    display_cols = ['entity_id', 'target_proxy', 'predicted_class', 'predicted_probability'] + feature_cols[:3] + ['...']
+    sample_df = results_df[['entity_id', 'target_proxy', 'predicted_class', 'predicted_probability'] + feature_cols[:3]].head()
+    sample_df.columns = list(sample_df.columns[:-1]) + ['...']
+    print(sample_df.to_string(index=False, float_format='%.4f'))
+    
+    # Create holdout visualization
+    plot_holdout_results(y_holdout, y_pred_holdout, y_proba_holdout, best_model_name, 
+                        best_result['auc'], holdout_auc)
+    
+    return results_df, holdout_accuracy, holdout_auc
+
+def plot_holdout_results(y_true, y_pred, y_proba, model_name, train_auc, holdout_auc):
+    """Create visualizations for holdout dataset results"""
+    
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+    
+    # 1. Confusion Matrix
+    cm = confusion_matrix(y_true, y_pred)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[0, 0])
+    axes[0, 0].set_title(f'Holdout Confusion Matrix - {model_name}')
+    axes[0, 0].set_xlabel('Predicted')
+    axes[0, 0].set_ylabel('Actual')
+    
+    # 2. Prediction Probability Distribution
+    axes[0, 1].hist(y_proba[y_true == 0], alpha=0.7, label='No Pest (0)', bins=20, color='blue')
+    axes[0, 1].hist(y_proba[y_true == 1], alpha=0.7, label='Pest (1)', bins=20, color='red')
+    axes[0, 1].set_xlabel('Predicted Probability')
+    axes[0, 1].set_ylabel('Frequency')
+    axes[0, 1].set_title('Holdout Probability Distribution')
+    axes[0, 1].legend()
+    axes[0, 1].grid(True, alpha=0.3)
+    
+    # 3. AUC Comparison (Train vs Holdout)
+    auc_comparison = ['Training AUC', 'Holdout AUC']
+    auc_values = [train_auc, holdout_auc]
+    colors = ['lightblue', 'orange']
+    
+    bars = axes[1, 0].bar(auc_comparison, auc_values, color=colors, alpha=0.7)
+    axes[1, 0].set_ylabel('AUC Score')
+    axes[1, 0].set_title('Training vs Holdout Performance')
+    axes[1, 0].set_ylim(0, 1)
+    axes[1, 0].grid(True, alpha=0.3)
+    
+    # Add value labels on bars
+    for bar, value in zip(bars, auc_values):
+        axes[1, 0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                       f'{value:.4f}', ha='center', va='bottom', fontweight='bold')
+    
+    # 4. Precision-Recall Curve
+    precision, recall, _ = precision_recall_curve(y_true, y_proba)
+    axes[1, 1].plot(recall, precision, color='blue', linewidth=2, 
+                   label=f'Holdout (AUC: {holdout_auc:.3f})')
+    axes[1, 1].set_xlabel('Recall')
+    axes[1, 1].set_ylabel('Precision')
+    axes[1, 1].set_title('Holdout Precision-Recall Curve')
+    axes[1, 1].legend()
+    axes[1, 1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
     """Create comprehensive visualizations of model performance"""
     
     fig, axes = plt.subplots(2, 3, figsize=(20, 12))
@@ -262,7 +399,7 @@ def plot_results(results, y_test):
     plt.tight_layout()
     plt.show()
 
-def main(csv_file_path):
+def main(csv_file_path, holdout_csv_path=None, output_csv_path=None):
     """Main function to run the complete ML pipeline"""
     
     print("=== Pest Prediction ML Pipeline ===\n")
@@ -293,24 +430,56 @@ def main(csv_file_path):
     print("\n5. Creating visualizations...")
     plot_results(results, y_test)
     
-    return results, scaler, best_model_name
+    # Evaluate on holdout dataset if provided
+    holdout_results = None
+    if holdout_csv_path:
+        print("\n6. Evaluating on holdout dataset...")
+        holdout_results = evaluate_holdout_dataset(results, scaler, best_model_name, 
+                                                  holdout_csv_path, output_csv_path)
+    
+    return results, scaler, best_model_name, holdout_results
 
 # Example usage:
 if __name__ == "__main__":
-    # Replace 'your_file.csv' with your actual CSV file path
-    csv_file_path = 'your_file.csv'
+    # Replace with your actual file paths
+    csv_file_path = 'your_training_file.csv'
+    holdout_csv_path = 'your_holdout_file.csv'  # Optional
+    output_csv_path = 'holdout_predictions.csv'  # Optional - will auto-generate if not provided
     
     try:
-        results, scaler, best_model = main(csv_file_path)
+        # Run the complete pipeline
+        results, scaler, best_model, holdout_results = main(
+            csv_file_path, 
+            holdout_csv_path=holdout_csv_path,
+            output_csv_path=output_csv_path
+        )
+        
         print(f"\nPipeline completed successfully!")
         print(f"Best model: {best_model}")
+        
+        if holdout_results:
+            holdout_df, holdout_acc, holdout_auc = holdout_results
+            print(f"Holdout dataset evaluated and saved!")
+            print(f"Holdout accuracy: {holdout_acc:.4f}")
+            print(f"Holdout AUC: {holdout_auc:.4f}")
         
         # You can now use the best model for predictions on new data
         # best_trained_model = results[best_model]['model']
         # predictions = best_trained_model.predict(new_data)
         
-    except FileNotFoundError:
-        print(f"Error: Could not find the file '{csv_file_path}'")
-        print("Please make sure the file path is correct.")
+    except FileNotFoundError as e:
+        print(f"Error: Could not find a file - {str(e)}")
+        print("Please make sure all file paths are correct.")
     except Exception as e:
         print(f"An error occurred: {str(e)}")
+
+# Alternative: Run just holdout evaluation if you already have trained models
+def evaluate_holdout_only(results, scaler, best_model_name, holdout_csv_path, output_csv_path=None):
+    """
+    Use this function if you've already trained models and just want to evaluate holdout data
+    
+    Example:
+    results, scaler, best_model = main('training_data.csv')  # Train first
+    evaluate_holdout_only(results, scaler, best_model, 'holdout_data.csv', 'predictions.csv')
+    """
+    return evaluate_holdout_dataset(results, scaler, best_model_name, holdout_csv_path, output_csv_path)
