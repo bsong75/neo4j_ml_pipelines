@@ -379,9 +379,8 @@ def evaluate_holdout_dataset(results, scaler, best_model_name, holdout_csv_path,
     
     # Show sample of results
     print(f"\nSample of saved results:")
-    display_cols = ['entity_id', 'target_proxy', 'predicted_class', 'predicted_probability'] + feature_cols[:3] + ['...']
-    sample_df = results_df[['entity_id', 'target_proxy', 'predicted_class', 'predicted_probability'] + feature_cols[:3]].head()
-    sample_df.columns = list(sample_df.columns[:-1]) + ['...']
+    sample_cols = ['entity_id', 'target_proxy', 'predicted_class', 'predicted_probability'] + feature_cols[:3]
+    sample_df = results_df[sample_cols].head()
     print(sample_df.to_string(index=False, float_format='%.4f'))
     
     # Create holdout visualization
@@ -439,6 +438,8 @@ def plot_holdout_results(y_true, y_pred, y_proba, model_name, train_auc, holdout
     
     plt.tight_layout()
     plt.show()
+
+def plot_results(results, y_test):
     """Create comprehensive visualizations of model performance"""
     
     fig, axes = plt.subplots(2, 3, figsize=(20, 12))
