@@ -16,24 +16,13 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import additional libraries with error handling
-try:
-    import lightgbm as lgb
-    LIGHTGBM_AVAILABLE = True
-except ImportError:
-    LIGHTGBM_AVAILABLE = False
-    print("Warning: LightGBM not available. Install with: pip install lightgbm")
+import lightgbm as lgb
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-try:
-    import tensorflow as tf
-    from tensorflow import keras
-    from tensorflow.keras import layers
-    KERAS_AVAILABLE = True
-    # Suppress TensorFlow warnings
-    tf.get_logger().setLevel('ERROR')
-except ImportError:
-    KERAS_AVAILABLE = False
-    print("Warning: TensorFlow/Keras not available. Install with: pip install tensorflow")
+# Suppress TensorFlow warnings
+tf.get_logger().setLevel('ERROR')
 
 def create_keras_model(input_dim, model_type='small'):
     """Create different Keras model architectures"""
@@ -178,35 +167,33 @@ def train_models(X_train, X_test, y_train, y_test):
         'Neural Network (Large)': MLPClassifier(hidden_layer_sizes=(200, 100, 50), random_state=42, max_iter=500),
     }
     
-    # Add LightGBM models if available
-    if LIGHTGBM_AVAILABLE:
-        models.update({
-            'LightGBM': lgb.LGBMClassifier(
-                random_state=42,
-                n_estimators=100,
-                verbosity=-1,
-                force_col_wise=True
-            ),
-            'LightGBM (Tuned)': lgb.LGBMClassifier(
-                random_state=42,
-                n_estimators=200,
-                max_depth=6,
-                learning_rate=0.1,
-                feature_fraction=0.8,
-                bagging_fraction=0.8,
-                bagging_freq=5,
-                verbosity=-1,
-                force_col_wise=True
-            ),
-        })
+    # Add LightGBM models
+    models.update({
+        'LightGBM': lgb.LGBMClassifier(
+            random_state=42,
+            n_estimators=100,
+            verbosity=-1,
+            force_col_wise=True
+        ),
+        'LightGBM (Tuned)': lgb.LGBMClassifier(
+            random_state=42,
+            n_estimators=200,
+            max_depth=6,
+            learning_rate=0.1,
+            feature_fraction=0.8,
+            bagging_fraction=0.8,
+            bagging_freq=5,
+            verbosity=-1,
+            force_col_wise=True
+        ),
+    })
     
-    # Add Keras models if available
-    if KERAS_AVAILABLE:
-        models.update({
-            'Keras Neural Network (Small)': KerasClassifierWrapper(model_type='small', epochs=100, verbose=0),
-            'Keras Neural Network (Medium)': KerasClassifierWrapper(model_type='medium', epochs=100, verbose=0),
-            'Keras Neural Network (Large)': KerasClassifierWrapper(model_type='large', epochs=100, verbose=0),
-        })
+    # Add Keras models
+    models.update({
+        'Keras Neural Network (Small)': KerasClassifierWrapper(model_type='small', epochs=100, verbose=0),
+        'Keras Neural Network (Medium)': KerasClassifierWrapper(model_type='medium', epochs=100, verbose=0),
+        'Keras Neural Network (Large)': KerasClassifierWrapper(model_type='large', epochs=100, verbose=0),
+    })
     
     # Models that don't need scaling
     no_scaling_models = [
@@ -557,9 +544,8 @@ def main(csv_file_path, holdout_csv_path=None, output_csv_path=None):
     print(f"Test set size: {X_test.shape[0]}")
     
     # Train models
-    print(f"\n3. Training {len(['RF', 'ET', 'DT', 'GB', 'AB', 'LR', 'RC', 'SGD', 'LDA', 'QDA', 'KNN', 'SVM-RBF', 'SVM-Lin', 'SVM-Poly', 'NB', 'NN-S', 'NN-M', 'NN-L'] + (['LGB', 'LGB-T'] if LIGHTGBM_AVAILABLE else []) + (['Keras-S', 'Keras-M', 'Keras-L'] if KERAS_AVAILABLE else []))} different models...")
-    if KERAS_AVAILABLE:
-        print("   Keras models may take longer due to neural network training...")
+    print(f"\n3. Training multiple models...")
+    print("   Keras models may take longer due to neural network training...")
     print("   This may take several minutes...")
     results, scaler = train_models(X_train, X_test, y_train, y_test)
     
@@ -590,11 +576,7 @@ if __name__ == "__main__":
     holdout_csv_path = 'your_holdout_file.csv'  # Optional
     output_csv_path = 'holdout_predictions.csv'  # Optional - will auto-generate if not provided
     
-    # Check available libraries
-    print("Library Availability Check:")
-    print(f"✓ Scikit-learn models: Always available")
-    print(f"{'✓' if LIGHTGBM_AVAILABLE else '✗'} LightGBM: {'Available' if LIGHTGBM_AVAILABLE else 'Not available (install with: pip install lightgbm)'}")
-    print(f"{'✓' if KERAS_AVAILABLE else '✗'} TensorFlow/Keras: {'Available' if KERAS_AVAILABLE else 'Not available (install with: pip install tensorflow)'}")
+    print("All required libraries are available.")
     print()
     
     try:
