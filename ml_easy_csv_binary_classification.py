@@ -16,6 +16,111 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import additional libraries with error handling
+try:
+    import lightgbm as lgb
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+    print("Warning: LightGBM not available. Install with: pip install lightgbm")
+
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+    from tensorflow.keras import layers
+    KERAS_AVAILABLE = True
+    # Suppress TensorFlow warnings
+    tf.get_logger().setLevel('ERROR')
+except ImportError:
+    KERAS_AVAILABLE = False
+    print("Warning: TensorFlow/Keras not available. Install with: pip install tensorflow")
+
+def create_keras_model(input_dim, model_type='small'):
+    """Create different Keras model architectures"""
+    
+    if model_type == 'small':
+        model = keras.Sequential([
+            layers.Dense(64, activation='relu', input_shape=(input_dim,)),
+            layers.Dropout(0.3),
+            layers.Dense(32, activation='relu'),
+            layers.Dropout(0.2),
+            layers.Dense(1, activation='sigmoid')
+        ])
+    elif model_type == 'medium':
+        model = keras.Sequential([
+            layers.Dense(128, activation='relu', input_shape=(input_dim,)),
+            layers.BatchNormalization(),
+            layers.Dropout(0.4),
+            layers.Dense(64, activation='relu'),
+            layers.BatchNormalization(),
+            layers.Dropout(0.3),
+            layers.Dense(32, activation='relu'),
+            layers.Dropout(0.2),
+            layers.Dense(1, activation='sigmoid')
+        ])
+    elif model_type == 'large':
+        model = keras.Sequential([
+            layers.Dense(256, activation='relu', input_shape=(input_dim,)),
+            layers.BatchNormalization(),
+            layers.Dropout(0.5),
+            layers.Dense(128, activation='relu'),
+            layers.BatchNormalization(),
+            layers.Dropout(0.4),
+            layers.Dense(64, activation='relu'),
+            layers.BatchNormalization(),
+            layers.Dropout(0.3),
+            layers.Dense(32, activation='relu'),
+            layers.Dropout(0.2),
+            layers.Dense(1, activation='sigmoid')
+        ])
+    
+    model.compile(
+        optimizer='adam',
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+class KerasClassifierWrapper:
+    """Wrapper to make Keras models compatible with sklearn interface"""
+    
+    def __init__(self, model_type='small', epochs=50, batch_size=32, verbose=0):
+        self.model_type = model_type
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.verbose = verbose
+        self.model = None
+        self.input_dim = None
+    
+    def fit(self, X, y):
+        self.input_dim = X.shape[1]
+        self.model = create_keras_model(self.input_dim, self.model_type)
+        
+        # Add early stopping
+        early_stopping = keras.callbacks.EarlyStopping(
+            monitor='val_loss', patience=10, restore_best_weights=True
+        )
+        
+        self.model.fit(
+            X, y,
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            validation_split=0.2,
+            callbacks=[early_stopping],
+            verbose=self.verbose
+        )
+        return self
+    
+    def predict(self, X):
+        predictions = self.model.predict(X, verbose=0)
+        return (predictions > 0.5).astype(int).flatten()
+    
+    def predict_proba(self, X):
+        predictions = self.model.predict(X, verbose=0).flatten()
+        # Return probabilities for both classes
+        return np.column_stack([1 - predictions, predictions])
+
 def load_and_prepare_data(csv_file_path):
     """Load CSV and prepare features and target"""
     df = pd.read_csv(csv_file_path)
@@ -73,16 +178,48 @@ def train_models(X_train, X_test, y_train, y_test):
         'Neural Network (Large)': MLPClassifier(hidden_layer_sizes=(200, 100, 50), random_state=42, max_iter=500),
     }
     
+    # Add LightGBM models if available
+    if LIGHTGBM_AVAILABLE:
+        models.update({
+            'LightGBM': lgb.LGBMClassifier(
+                random_state=42,
+                n_estimators=100,
+                verbosity=-1,
+                force_col_wise=True
+            ),
+            'LightGBM (Tuned)': lgb.LGBMClassifier(
+                random_state=42,
+                n_estimators=200,
+                max_depth=6,
+                learning_rate=0.1,
+                feature_fraction=0.8,
+                bagging_fraction=0.8,
+                bagging_freq=5,
+                verbosity=-1,
+                force_col_wise=True
+            ),
+        })
+    
+    # Add Keras models if available
+    if KERAS_AVAILABLE:
+        models.update({
+            'Keras Neural Network (Small)': KerasClassifierWrapper(model_type='small', epochs=100, verbose=0),
+            'Keras Neural Network (Medium)': KerasClassifierWrapper(model_type='medium', epochs=100, verbose=0),
+            'Keras Neural Network (Large)': KerasClassifierWrapper(model_type='large', epochs=100, verbose=0),
+        })
+    
     # Models that don't need scaling
     no_scaling_models = [
         'Random Forest', 'Extra Trees', 'Decision Tree', 
-        'Gradient Boosting', 'AdaBoost', 'Naive Bayes'
+        'Gradient Boosting', 'AdaBoost', 'Naive Bayes',
+        'LightGBM', 'LightGBM (Tuned)'
     ]
     
     results = {}
+    total_models = len(models)
     
-    for name, model in models.items():
-        print(f"Training {name}...", end=" ")
+    for i, (name, model) in enumerate(models.items(), 1):
+        print(f"Training {name} ({i}/{total_models})...", end=" ")
         
         try:
             if name in no_scaling_models:
@@ -90,21 +227,22 @@ def train_models(X_train, X_test, y_train, y_test):
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_test)
                 y_proba = model.predict_proba(X_test)[:, 1]
+                
+                # Cross-validation
+                cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='roc_auc')
+                
             else:
                 # Models that benefit from scaling
                 model.fit(X_train_scaled, y_train)
                 y_pred = model.predict(X_test_scaled)
                 y_proba = model.predict_proba(X_test_scaled)[:, 1]
+                
+                # Cross-validation with scaled data
+                cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=5, scoring='roc_auc')
             
             # Calculate metrics
             accuracy = accuracy_score(y_test, y_pred)
             auc = roc_auc_score(y_test, y_proba)
-            
-            # Calculate cross-validation score for robustness
-            if name in no_scaling_models:
-                cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='roc_auc')
-            else:
-                cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=5, scoring='roc_auc')
             
             results[name] = {
                 'model': model,
@@ -344,8 +482,8 @@ def plot_holdout_results(y_true, y_pred, y_proba, model_name, train_auc, holdout
     axes[0, 2].legend()
     axes[0, 2].grid(True, alpha=0.3)
     
-    # 4. Feature importance (for tree-based models)
-    tree_based_models = ['Random Forest', 'Extra Trees', 'Decision Tree', 'Gradient Boosting', 'AdaBoost']
+    # Feature importance (for tree-based models including LightGBM)
+    tree_based_models = ['Random Forest', 'Extra Trees', 'Decision Tree', 'Gradient Boosting', 'AdaBoost', 'LightGBM', 'LightGBM (Tuned)']
     best_tree_model = None
     for model_name in tree_based_models:
         if model_name in results:
@@ -418,8 +556,10 @@ def main(csv_file_path, holdout_csv_path=None, output_csv_path=None):
     print(f"Test set size: {X_test.shape[0]}")
     
     # Train models
-    print("\n3. Training 18 different models...")
-    print("   This may take a few minutes...")
+    print(f"\n3. Training {len(['RF', 'ET', 'DT', 'GB', 'AB', 'LR', 'RC', 'SGD', 'LDA', 'QDA', 'KNN', 'SVM-RBF', 'SVM-Lin', 'SVM-Poly', 'NB', 'NN-S', 'NN-M', 'NN-L'] + (['LGB', 'LGB-T'] if LIGHTGBM_AVAILABLE else []) + (['Keras-S', 'Keras-M', 'Keras-L'] if KERAS_AVAILABLE else []))} different models...")
+    if KERAS_AVAILABLE:
+        print("   Keras models may take longer due to neural network training...")
+    print("   This may take several minutes...")
     results, scaler = train_models(X_train, X_test, y_train, y_test)
     
     # Evaluate best model
@@ -441,10 +581,20 @@ def main(csv_file_path, holdout_csv_path=None, output_csv_path=None):
 
 # Example usage:
 if __name__ == "__main__":
+    # Install required packages first:
+    # pip install pandas numpy scikit-learn matplotlib seaborn lightgbm tensorflow
+    
     # Replace with your actual file paths
     csv_file_path = 'your_training_file.csv'
     holdout_csv_path = 'your_holdout_file.csv'  # Optional
     output_csv_path = 'holdout_predictions.csv'  # Optional - will auto-generate if not provided
+    
+    # Check available libraries
+    print("Library Availability Check:")
+    print(f"✓ Scikit-learn models: Always available")
+    print(f"{'✓' if LIGHTGBM_AVAILABLE else '✗'} LightGBM: {'Available' if LIGHTGBM_AVAILABLE else 'Not available (install with: pip install lightgbm)'}")
+    print(f"{'✓' if KERAS_AVAILABLE else '✗'} TensorFlow/Keras: {'Available' if KERAS_AVAILABLE else 'Not available (install with: pip install tensorflow)'}")
+    print()
     
     try:
         # Run the complete pipeline
