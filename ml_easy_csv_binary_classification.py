@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier, ExtraTreesClassifier
-from sklearn.linear_model import LogisticRegression, RidgeClassifier, SGDClassifier
+from sklearn.linear_model import LogisticRegression, RidgeClassifier, SGDClassifier, ElasticNet
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
@@ -164,6 +164,7 @@ def train_models(X_train, X_test, y_train, y_test):
         'Logistic Regression': LogisticRegression(random_state=42, max_iter=1000),
         'Ridge Classifier': RidgeClassifier(random_state=42),
         'SGD Classifier': SGDClassifier(random_state=42, max_iter=1000),
+        'Elastic Net': ElasticNet(random_state=42, max_iter=1000),
         'Linear Discriminant Analysis': LinearDiscriminantAnalysis(),
         'Quadratic Discriminant Analysis': QuadraticDiscriminantAnalysis(),
         
