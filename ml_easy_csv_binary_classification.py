@@ -109,6 +109,21 @@ class KerasClassifierWrapper:
         predictions = self.model.predict(X, verbose=0).flatten()
         # Return probabilities for both classes
         return np.column_stack([1 - predictions, predictions])
+    
+    def get_params(self, deep=True):
+        """Get parameters for this estimator (required by sklearn)"""
+        return {
+            'model_type': self.model_type,
+            'epochs': self.epochs,
+            'batch_size': self.batch_size,
+            'verbose': self.verbose
+        }
+    
+    def set_params(self, **parameters):
+        """Set parameters for this estimator (required by sklearn)"""
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
 
 def load_and_prepare_data(csv_file_path):
     """Load CSV and prepare features and target"""
