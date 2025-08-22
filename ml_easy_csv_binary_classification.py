@@ -169,11 +169,11 @@ def train_models(X_train, X_test, y_train, y_test):
         
         # Bagging ensembles
         'Bagging (Decision Tree)': BaggingClassifier(
-            base_estimator=DecisionTreeClassifier(random_state=42), 
+            estimator=DecisionTreeClassifier(random_state=42), 
             n_estimators=50, random_state=42
         ),
         'Bagging (SVM)': BaggingClassifier(
-            base_estimator=SVC(random_state=42, probability=True), 
+            estimator=SVC(random_state=42, probability=True), 
             n_estimators=10, random_state=42
         ),
         
