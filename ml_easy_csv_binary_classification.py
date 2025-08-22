@@ -1,11 +1,13 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier, ExtraTreesClassifier
-from sklearn.linear_model import LogisticRegression, RidgeClassifier, SGDClassifier, ElasticNet
-from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier, ExtraTreesClassifier, HistGradientBoostingClassifier, BaggingClassifier
+from sklearn.linear_model import LogisticRegression, RidgeClassifier, SGDClassifier, ElasticNet, PassiveAggressiveClassifier, Perceptron
+from sklearn.svm import SVC, LinearSVC
+from sklearn.ensemble import VotingClassifier, StackingClassifier
+from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.naive_bayes import GaussianNB
+from sklearn.naive_bayes import GaussianNB, ComplementNB, BernoulliNB
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
@@ -20,6 +22,10 @@ import lightgbm as lgb
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+
+# Import additional boosting libraries
+import xgboost as xgb
+import catboost as cb
 
 # Suppress TensorFlow warnings
 tf.get_logger().setLevel('ERROR')
@@ -158,13 +164,26 @@ def train_models(X_train, X_test, y_train, y_test):
         'Extra Trees': ExtraTreesClassifier(n_estimators=100, random_state=42),
         'Decision Tree': DecisionTreeClassifier(random_state=42, max_depth=10),
         'Gradient Boosting': GradientBoostingClassifier(random_state=42),
+        'Histogram Gradient Boosting': HistGradientBoostingClassifier(random_state=42),
         'AdaBoost': AdaBoostClassifier(random_state=42),
+        
+        # Bagging ensembles
+        'Bagging (Decision Tree)': BaggingClassifier(
+            base_estimator=DecisionTreeClassifier(random_state=42), 
+            n_estimators=50, random_state=42
+        ),
+        'Bagging (SVM)': BaggingClassifier(
+            base_estimator=SVC(random_state=42, probability=True), 
+            n_estimators=10, random_state=42
+        ),
         
         # Linear models (benefit from scaling)
         'Logistic Regression': LogisticRegression(random_state=42, max_iter=1000),
         'Ridge Classifier': RidgeClassifier(random_state=42),
-        'SGD Classifier': SGDClassifier(random_state=42, max_iter=1000),
+        'SGD Classifier': SGDClassifier(random_state=42, max_iter=1000, loss='log_loss'),
         'Elastic Net': ElasticNet(random_state=42, max_iter=1000),
+        'Passive Aggressive': PassiveAggressiveClassifier(random_state=42, max_iter=1000),
+        'Perceptron': Perceptron(random_state=42, max_iter=1000),
         'Linear Discriminant Analysis': LinearDiscriminantAnalysis(),
         'Quadratic Discriminant Analysis': QuadraticDiscriminantAnalysis(),
         
@@ -173,9 +192,13 @@ def train_models(X_train, X_test, y_train, y_test):
         'SVM (RBF)': SVC(random_state=42, probability=True, kernel='rbf'),
         'SVM (Linear)': SVC(random_state=42, probability=True, kernel='linear'),
         'SVM (Poly)': SVC(random_state=42, probability=True, kernel='poly', degree=3),
+        'Linear SVC': LinearSVC(random_state=42, max_iter=2000),
         
         # Probabilistic models
-        'Naive Bayes': GaussianNB(),
+        'Naive Bayes (Gaussian)': GaussianNB(),
+        'Naive Bayes (Complement)': ComplementNB(),
+        'Naive Bayes (Bernoulli)': BernoulliNB(),
+        'Gaussian Process': GaussianProcessClassifier(random_state=42),
         
         # Neural networks (need scaling)
         'Neural Network (Small)': MLPClassifier(hidden_layer_sizes=(50,), random_state=42, max_iter=500),
@@ -204,6 +227,42 @@ def train_models(X_train, X_test, y_train, y_test):
         ),
     })
     
+    # Add XGBoost models
+    models.update({
+        'XGBoost': xgb.XGBClassifier(
+            random_state=42,
+            n_estimators=100,
+            eval_metric='logloss',
+            verbosity=0
+        ),
+        'XGBoost (Tuned)': xgb.XGBClassifier(
+            random_state=42,
+            n_estimators=200,
+            max_depth=6,
+            learning_rate=0.1,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            eval_metric='logloss',
+            verbosity=0
+        ),
+    })
+    
+    # Add CatBoost models
+    models.update({
+        'CatBoost': cb.CatBoostClassifier(
+            random_state=42,
+            iterations=100,
+            verbose=False
+        ),
+        'CatBoost (Tuned)': cb.CatBoostClassifier(
+            random_state=42,
+            iterations=200,
+            depth=6,
+            learning_rate=0.1,
+            verbose=False
+        ),
+    })
+    
     # Add Keras models
     models.update({
         'Keras Neural Network (Small)': KerasClassifierWrapper(model_type='small', epochs=100, verbose=0),
@@ -211,12 +270,41 @@ def train_models(X_train, X_test, y_train, y_test):
         'Keras Neural Network (Large)': KerasClassifierWrapper(model_type='large', epochs=100, verbose=0),
     })
     
+    # Create ensemble models using some of the best individual models
+    base_models = [
+        ('rf', RandomForestClassifier(n_estimators=50, random_state=42)),
+        ('gb', GradientBoostingClassifier(random_state=42, n_estimators=50)),
+        ('lr', LogisticRegression(random_state=42, max_iter=1000))
+    ]
+    
+    models.update({
+        'Voting Classifier (Hard)': VotingClassifier(
+            estimators=base_models,
+            voting='hard'
+        ),
+        'Voting Classifier (Soft)': VotingClassifier(
+            estimators=base_models,
+            voting='soft'
+        ),
+        'Stacking Classifier': StackingClassifier(
+            estimators=base_models,
+            final_estimator=LogisticRegression(random_state=42),
+            cv=3
+        ),
+    })
+    
     # Models that don't need scaling
     no_scaling_models = [
         'Random Forest', 'Extra Trees', 'Decision Tree', 
-        'Gradient Boosting', 'AdaBoost', 'Naive Bayes',
-        'LightGBM', 'LightGBM (Tuned)'
+        'Gradient Boosting', 'Histogram Gradient Boosting', 'AdaBoost',
+        'Bagging (Decision Tree)', 'Bagging (SVM)',
+        'Naive Bayes (Gaussian)', 'Naive Bayes (Complement)', 'Naive Bayes (Bernoulli)',
+        'LightGBM', 'LightGBM (Tuned)', 'Gaussian Process',
+        'Voting Classifier (Hard)', 'Voting Classifier (Soft)', 'Stacking Classifier'
     ]
+    
+    # Add XGBoost and CatBoost to no_scaling_models
+    no_scaling_models.extend(['XGBoost', 'XGBoost (Tuned)', 'CatBoost', 'CatBoost (Tuned)'])
     
     results = {}
     total_models = len(models)
@@ -229,23 +317,48 @@ def train_models(X_train, X_test, y_train, y_test):
                 # Models that don't need scaling
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_test)
-                y_proba = model.predict_proba(X_test)[:, 1]
+                
+                # Get probabilities or decision scores
+                if hasattr(model, 'predict_proba'):
+                    y_proba = model.predict_proba(X_test)[:, 1]
+                elif hasattr(model, 'decision_function'):
+                    y_proba = model.decision_function(X_test)
+                else:
+                    y_proba = np.zeros_like(y_pred, dtype=float)
                 
                 # Cross-validation
-                cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='roc_auc')
+                try:
+                    cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='roc_auc')
+                except:
+                    cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='accuracy')
                 
             else:
                 # Models that benefit from scaling
                 model.fit(X_train_scaled, y_train)
                 y_pred = model.predict(X_test_scaled)
-                y_proba = model.predict_proba(X_test_scaled)[:, 1]
+                
+                # Get probabilities or decision scores
+                if hasattr(model, 'predict_proba'):
+                    y_proba = model.predict_proba(X_test_scaled)[:, 1]
+                elif hasattr(model, 'decision_function'):
+                    y_proba = model.decision_function(X_test_scaled)
+                else:
+                    y_proba = np.zeros_like(y_pred, dtype=float)
                 
                 # Cross-validation with scaled data
-                cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=5, scoring='roc_auc')
+                try:
+                    cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=5, scoring='roc_auc')
+                except:
+                    cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=5, scoring='accuracy')
             
             # Calculate metrics
             accuracy = accuracy_score(y_test, y_pred)
-            auc = roc_auc_score(y_test, y_proba)
+            
+            # Calculate AUC if we have probability-like scores
+            try:
+                auc = roc_auc_score(y_test, y_proba)
+            except:
+                auc = 0.0  # Default if AUC calculation fails
             
             results[name] = {
                 'model': model,
